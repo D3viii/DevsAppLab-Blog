@@ -1,0 +1,33 @@
+import sailpoint.object.*;
+import sailpoint.api.*;
+
+// Initialize the list to store team names
+List<String> accessModelTeams = new ArrayList<>();
+
+try {
+    // Get the SailPoint context
+    SailPointContext context = sailpoint.tools.GeneralUtilities.getCurrentContext();
+    
+    // Define the query to fetch Access Model Team names
+    String query = "SELECT DISTINCT ACCESS_MODEL_TEAM FROM EL_APP_SUPPORT.IAM_ADD_USER WHERE REGION = 'DEV'";
+    
+    // Execute the query using JDBC template
+    List<Object[]> results = context.getJdbcTemplate().query(query);
+    
+    // Iterate over the query results and populate the list
+    for (Object[] row : results) {
+        if (row != null && row.length > 0 && row[0] != null) {
+            accessModelTeams.add(row[0].toString());
+        }
+    }
+
+    // Log the result for debugging (optional)
+    log.debug("Retrieved Access Model Teams: " + accessModelTeams);
+
+} catch (Exception e) {
+    // Log any exceptions
+    log.error("Error retrieving Access Model Teams: ", e);
+}
+
+// Return the list of team names
+return accessModelTeams;
