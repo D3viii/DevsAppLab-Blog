@@ -1,33 +1,16 @@
-import sailpoint.object.*;
-import sailpoint.api.*;
-
-// Initialize the list to store team names
-List<String> accessModelTeams = new ArrayList<>();
-
-try {
-    // Get the SailPoint context
-    SailPointContext context = sailpoint.tools.GeneralUtilities.getCurrentContext();
-    
-    // Define the query to fetch Access Model Team names
-    String query = "SELECT DISTINCT ACCESS_MODEL_TEAM FROM EL_APP_SUPPORT.IAM_ADD_USER WHERE REGION = 'DEV'";
-    
-    // Execute the query using JDBC template
-    List<Object[]> results = context.getJdbcTemplate().query(query);
-    
-    // Iterate over the query results and populate the list
-    for (Object[] row : results) {
-        if (row != null && row.length > 0 && row[0] != null) {
-            accessModelTeams.add(row[0].toString());
-        }
-    }
-
-    // Log the result for debugging (optional)
-    log.debug("Retrieved Access Model Teams: " + accessModelTeams);
-
-} catch (Exception e) {
-    // Log any exceptions
-    log.error("Error retrieving Access Model Teams: ", e);
-}
-
-// Return the list of team names
-return accessModelTeams;
+SELECT
+'exec PACE_MASTERDBO.ESTAR_UMGR.INS_EGL_CENTER_ROLE_USER("'
+|| CENTER_ROLE_ID || '","' || IN_USERNAME || '","' || PRIMARY_ROLE || '","' || IN_UPDATE_SOURCE || '"); COMMIT;'
+INS_CENTER_ROLE_USER_BLOCK
+FROM (
+    SELECT
+        CENTER_ROLE_ID, -- Center Role ID
+        'XBBN56T' AS IN_USERNAME,  -- Commit ID (to be populated from AH form)
+        PRIMARY_ROLE,  -- Is this the primary role?
+        'AH0000000' AS IN_UPDATE_SOURCE  -- Access Hub Form ID
+    FROM EL_APP_SUPPORT.IAM_CENTER_ROLES
+    WHERE 
+        MNE = 'ZF5'  -- Eagle Mnemonic
+        AND REGION = 'DEV'  -- Environment region
+        AND ACCESS_MODEL_TEAM = 'G_BNY TECH PROD SUPPORT'  -- Team name from AH form
+);
