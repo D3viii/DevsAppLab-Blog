@@ -1,0 +1,117 @@
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
+import sailpoint.api.SailPointContext;
+import sailpoint.object.Identity;
+import sailpoint.tools.GeneralException;
+
+// Get SailPoint context and identity
+SailPointContext context = request.getContext();
+Identity identity = request.getIdentity();
+String username = identity.getAttribute("employeeId");  // Ensure correct attribute
+String updateSource = "AH0000000";  // Access Hub Form value
+String mnemonic = "ZF5";  // Eagle Mnemonic
+String region = "DEV";  // Region
+List<String> businessGroupData = new ArrayList<>();
+
+// Database connection details
+String jdbcUrl1 = "jdbc:oracle:thin:@<ELS_QA_HOST>:<PORT>:<SID>";  // ELS QA DB
+String jdbcUrl2 = "jdbc:oracle:thin:@<ZF5_DEV_HOST>:<PORT>:<SID>";  // ZF5 DEV DB
+String dbUser = "<DB_USER>";
+String dbPassword = "<DB_PASSWORD>";
+
+Connection conn1 = null;
+Connection conn2 = null;
+PreparedStatement stmt = null;
+ResultSet rs = null;
+
+try {
+    // STEP 1: Query Database 1 (ELS QA) for Business Group Data
+    conn1 = DriverManager.getConnection(jdbcUrl1, dbUser, dbPassword);
+    
+    String userBusinessQuery = "SELECT BUSINESS_GROUP, REPORT_PROFILE_GROUP, REPORT_VIEWER_GROUP, " +
+                               "AUTHENTICATION_MODE, ACCOUNT_STATE, EVENT_NAME, PARTITION, LDAP_USER, " +
+                               "TO_CHAR(TRUNC(SYSDATE), 'DDMMYYYY') AS PASSWORD_SET_DATE, " +
+                               "ENABLE_CONCURRENT_LOGINS " +
+                               "FROM EL_APP_SUPPORT.IAM_ADD_USER " +
+                               "WHERE MNE = ? AND REGION = ? AND ACCESS_MODEL_TEAM = ?";
+    
+    stmt = conn1.prepareStatement(userBusinessQuery);
+    stmt.setString(1, mnemonic);
+    stmt.setString(2, region);
+    stmt.setString(3, "G_BNY TECH PROD SUPPORT");
+    rs = stmt.executeQuery();
+
+    while (rs.next()) {
+        String businessGroup = rs.getString("BUSINESS_GROUP");
+        businessGroupData.add(businessGroup);  // Store business groups in memory
+    }
+    rs.close();
+    stmt.close();
+    conn1.close();  // Close connection to first database
+
+    // STEP 2: Connect to Second Database (ZF5 DEV) to Assign Roles
+    conn2 = DriverManager.getConnection(jdbcUrl2, dbUser, dbPassword);
+
+    // Assign Center Roles based on Business Group Data
+    for (String businessGroup : businessGroupData) {
+        String centerRoleQuery = "SELECT CENTER_ROLE_ID FROM EL_APP_SUPPORT.IAM_CENTER_ROLES " +
+                                 "WHERE MNE = ? AND REGION = ? AND ACCESS_MODEL_TEAM = ?";
+        stmt = conn2.prepareStatement(centerRoleQuery);
+        stmt.setString(1, mnemonic);
+        stmt.setString(2, region);
+        stmt.setString(3, businessGroup);
+        rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            String centerRoleId = rs.getString("CENTER_ROLE_ID");
+
+            String insertCenterRole = "BEGIN PACE_MASTERDBO.ESTAR_UMGR.INS_EGL_CENTER_ROLE_USER(?, ?, ?, ?, ?); COMMIT; END;";
+            PreparedStatement centerStmt = conn2.prepareStatement(insertCenterRole);
+            centerStmt.setString(1, centerRoleId);
+            centerStmt.setString(2, username);
+            centerStmt.setInt(3, 1);  // Is Primary Role
+            centerStmt.setString(4, updateSource);
+            centerStmt.setString(5, "TXN12345"); // Transaction Number
+            centerStmt.executeUpdate();
+            centerStmt.close();
+        }
+        rs.close();
+        stmt.close();
+    }
+
+    // Assign PACE Roles based on Business Group Data
+    for (String businessGroup : businessGroupData) {
+        String paceRoleQuery = "SELECT PACE_ROLE FROM EL_APP_SUPPORT.IAM_PACE_ROLES " +
+                               "WHERE MNE = ? AND REGION = ? AND ACCESS_MODEL_TEAM = ?";
+        stmt = conn2.prepareStatement(paceRoleQuery);
+        stmt.setString(1, mnemonic);
+        stmt.setString(2, region);
+        stmt.setString(3, businessGroup);
+        rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            String paceRole = rs.getString("PACE_ROLE");
+
+            String insertPaceRole = "BEGIN PACE_MASTERDBO.ESTAR_UMGR.ADD_PACE_ROLE_REL(?, ?, ?); COMMIT; END;";
+            PreparedStatement paceStmt = conn2.prepareStatement(insertPaceRole);
+            paceStmt.setString(1, username);
+            paceStmt.setString(2, paceRole);
+            paceStmt.setString(3, updateSource);
+            paceStmt.executeUpdate();
+            paceStmt.close();
+        }
+        rs.close();
+        stmt.close();
+    }
+
+} catch (Exception e) {
+    throw new GeneralException("Error in After Provisioning Rule: " + e.getMessage());
+} finally {
+    // Close all resources
+    if (rs != null) rs.close();
+    if (stmt != null) stmt.close();
+    if (conn2 != null) conn2.close();
+}
