@@ -1,0 +1,44 @@
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import sailpoint.api.SailPointContext;
+import sailpoint.object.Identity;
+import sailpoint.tools.GeneralException;
+
+// Get context and identity
+SailPointContext context = request.getContext();
+Identity identity = request.getIdentity();
+String username = identity.getAttribute("employeeId");  // Replace with actual attribute for username
+
+// Database connection details
+String jdbcUrl = "jdbc:oracle:thin:@<DB_HOST>:<PORT>:<SID>";
+String dbUser = "<DB_USER>";
+String dbPassword = "<DB_PASSWORD>";
+
+Connection conn = null;
+PreparedStatement stmt = null;
+ResultSet rs = null;
+
+try {
+    // Connect to database
+    conn = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword);
+
+    // Check if user exists in pace_users table
+    String sql = "SELECT count(1) FROM pace_masterdbo.pace_users WHERE username = ?";
+    stmt = conn.prepareStatement(sql);
+    stmt.setString(1, username);
+    rs = stmt.executeQuery();
+
+    // If user does not exist, throw an error to stop provisioning
+    if (rs.next() && rs.getInt(1) == 0) {
+        throw new GeneralException("User " + username + " does not exist in the Eagle region.");
+    }
+
+} catch (Exception e) {
+    throw new GeneralException("Error in Before Provisioning Rule: " + e.getMessage());
+} finally {
+    // Close resources
+    if (rs != null) rs.close();
+    if (stmt != null) stmt.close();
+    if (conn != null) conn.close();
+}
