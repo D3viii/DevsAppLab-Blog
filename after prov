@@ -1,50 +1,116 @@
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
 import sailpoint.api.SailPointContext;
 import sailpoint.object.Identity;
 import sailpoint.tools.GeneralException;
-import java.util.List;
 
-// Get context and identity
+// Get SailPoint context and identity
 SailPointContext context = request.getContext();
 Identity identity = request.getIdentity();
-String username = identity.getAttribute("employeeId");  // Ensure correct attribute
-List<String> roles = List.of(
-    "G_BNY CODE MAINTENANCE",
-    "G_BNY PACE VIEW MODEL",
-    "G_BNY TECH PROD SUPPORT",
-    "G_BNY TECH SCHEDULE CONFIG",
-    "SYSTEM ADMIN ROLE"
-);
+String username = identity.getAttribute("COMITID");  // Matches Schema
 String updateSource = "AH0000000";  // Access Hub Form value
 
 // Database connection details
-String jdbcUrl = "jdbc:oracle:thin:@<DB_HOST>:<PORT>:<SID>";
-String dbUser = "<DB_USER>";
-String dbPassword = "<DB_PASSWORD>";
+String jdbcUrl1 = "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=elsQAHost)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=elsQA)))";  // ELS QA DB
+String jdbcUrl2 = "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=zf5DEVHost)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=zf5DEV)))";  // ZF5 DEV DB
+String dbUser = "dbuser";
+String dbPassword = "anchor$1";
 
-Connection conn = null;
+Connection conn1 = null;
+Connection conn2 = null;
 PreparedStatement stmt = null;
+ResultSet rs = null;
+List<String> businessGroupData = new ArrayList<>();
 
 try {
-    // Open DB connection
-    conn = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword);
+    // STEP 1: Query Database 1 (ELS QA) for Business Group Data
+    conn1 = DriverManager.getConnection(jdbcUrl1, dbUser, dbPassword);
+    
+    String userBusinessQuery = "SELECT BUSINESS_GROUP FROM EL_APP_SUPPORT.IAM_ADD_USER " +
+                               "WHERE MNE = ? AND REGION = ? AND ACCESS_MODEL_TEAM = ?";
+    
+    stmt = conn1.prepareStatement(userBusinessQuery);
+    stmt.setString(1, "ZF5"); // Eagle Mnemonic
+    stmt.setString(2, "DEV"); // Region
+    stmt.setString(3, "G_BNY TECH PROD SUPPORT");
+    rs = stmt.executeQuery();
 
-    // Loop through roles and insert each one
-    String sql = "BEGIN PACE_MASTERDBO.ESTAR_UMGR.ADD_PACE_ROLE_REL(?, ?, ?); COMMIT; END;";
-    stmt = conn.prepareStatement(sql);
+    while (rs.next()) {
+        String businessGroup = rs.getString("BUSINESS_GROUP");
+        businessGroupData.add(businessGroup);
+    }
 
-    for (String role : roles) {
-        stmt.setString(1, username);
-        stmt.setString(2, role);
-        stmt.setString(3, updateSource);
-        stmt.executeUpdate();
+} catch (Exception e) {
+    throw new GeneralException("Error retrieving business groups: " + e.getMessage());
+} finally {
+    if (rs != null) rs.close();
+    if (stmt != null) stmt.close();
+    if (conn1 != null) conn1.close();
+}
+
+// STEP 2: Connect to Second Database (ZF5 DEV) to Assign Roles
+try {
+    conn2 = DriverManager.getConnection(jdbcUrl2, dbUser, dbPassword);
+
+    // Assign Center Roles based on Business Group Data
+    for (String businessGroup : businessGroupData) {
+        String centerRoleQuery = "SELECT CENTER_ROLE_ID FROM EL_APP_SUPPORT.IAM_CENTER_ROLES " +
+                                 "WHERE MNE = ? AND REGION = ? AND ACCESS_MODEL_TEAM = ?";
+        stmt = conn2.prepareStatement(centerRoleQuery);
+        stmt.setString(1, "ZF5");
+        stmt.setString(2, "DEV");
+        stmt.setString(3, businessGroup);
+        rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            String centerRoleId = rs.getString("CENTER_ROLE_ID");
+
+            String insertCenterRole = "BEGIN PACE_MASTERDBO.ESTAR_UMGR.INS_EGL_CENTER_ROLE_USER(?, ?, ?, ?, ?); COMMIT; END;";
+            PreparedStatement centerStmt = conn2.prepareStatement(insertCenterRole);
+            centerStmt.setString(1, centerRoleId);
+            centerStmt.setString(2, username);
+            centerStmt.setInt(3, 1);  // Is Primary Role
+            centerStmt.setString(4, updateSource);
+            centerStmt.setString(5, "TXN12345"); // Transaction Number
+            centerStmt.executeUpdate();
+            centerStmt.close();
+        }
+        rs.close();
+        stmt.close();
+    }
+
+    // Assign PACE Roles based on Business Group Data
+    for (String businessGroup : businessGroupData) {
+        String paceRoleQuery = "SELECT PACE_ROLE FROM EL_APP_SUPPORT.IAM_PACE_ROLES " +
+                               "WHERE MNE = ? AND REGION = ? AND ACCESS_MODEL_TEAM = ?";
+        stmt = conn2.prepareStatement(paceRoleQuery);
+        stmt.setString(1, "ZF5");
+        stmt.setString(2, "DEV");
+        stmt.setString(3, businessGroup);
+        rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            String paceRole = rs.getString("PACE_ROLE");
+
+            String insertPaceRole = "BEGIN PACE_MASTERDBO.ESTAR_UMGR.ADD_PACE_ROLE_REL(?, ?, ?); COMMIT; END;";
+            PreparedStatement paceStmt = conn2.prepareStatement(insertPaceRole);
+            paceStmt.setString(1, username);
+            paceStmt.setString(2, paceRole);
+            paceStmt.setString(3, updateSource);
+            paceStmt.executeUpdate();
+            paceStmt.close();
+        }
+        rs.close();
+        stmt.close();
     }
 
 } catch (Exception e) {
     throw new GeneralException("Error in After Provisioning Rule: " + e.getMessage());
 } finally {
-    // Close resources
+    if (rs != null) rs.close();
     if (stmt != null) stmt.close();
-    if (conn != null) conn.close();
+    if (conn2 != null) conn2.close();
 }
