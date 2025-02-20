@@ -1,0 +1,23 @@
+<Rule name="ExecuteProvisioningCommands" type="Provisioning">
+    <Script>
+        <![CDATA[
+        import java.sql.*;
+
+        String zf5Url = "jdbc:oracle:thin:@zf5DevHost:1521/zf5Dev";
+        String dbUser = "dbuser";
+        String dbPassword = "anchor$1";
+        Connection connZf5 = DriverManager.getConnection(zf5Url, dbUser, dbPassword);
+
+        // Fetch EXEC commands from ELS QA (already retrieved)
+        List<String> execCommands = provisioningPlan.getArguments("EXEC_COMMANDS");
+
+        for (String execCommand : execCommands) {
+            PreparedStatement stmtZf5 = connZf5.prepareStatement(execCommand);
+            stmtZf5.executeUpdate();
+            stmtZf5.close();
+        }
+
+        connZf5.close();
+        ]]>
+    </Script>
+</Rule>
