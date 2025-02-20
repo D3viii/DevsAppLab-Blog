@@ -1,0 +1,12 @@
+<Form name="ProvisioningForm">
+    <Field name="ACCESS_MODEL_TEAM" label="Access Model Team" type="string" required="true">
+        <Suggest>
+            <GroupQuery>
+                <![CDATA[
+                    SELECT DISTINCT ACCESS_MODEL_TEAM 
+                    FROM EL_APP_SUPPORT.IAM_CENTER_ROLES
+                ]]>
+            </GroupQuery>
+        </Suggest>
+    </Field>
+</Form>
