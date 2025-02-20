@@ -1,0 +1,70 @@
+<Rule name="ExecuteProvisioningCommands" type="Provisioning">
+    <Script>
+        <![CDATA[
+        import java.sql.*;
+        import sailpoint.object.Identity;
+        import sailpoint.object.ProvisioningPlan;
+        import sailpoint.object.Application;
+        import sailpoint.api.SailPointContext;
+        import sailpoint.api.Provisioner;
+
+        // Get SailPoint Context
+        SailPointContext context = sailPointContext;
+        
+        // Get Identity & Provisioning Plan
+        Identity identity = context.getObject(Identity.class, provisioningPlan.getNativeIdentity());
+        String accessModelTeam = provisioningPlan.getArgument("ACCESS_MODEL_TEAM");  // Get user input
+
+        // Database connection details
+        String elsUrl = "jdbc:oracle:thin:@elsQAHost:1521/elsQA";
+        String zf5Url = "jdbc:oracle:thin:@zf5DevHost:1521/zf5Dev";
+        String dbUser = "dbuser";
+        String dbPassword = "anchor$1";
+
+        // Initialize connections
+        Connection connEls = null;
+        Connection connZf5 = null;
+        PreparedStatement stmtEls = null;
+        PreparedStatement stmtZf5 = null;
+        ResultSet rs = null;
+
+        try {
+            // Connect to both databases
+            connEls = DriverManager.getConnection(elsUrl, dbUser, dbPassword);
+            connZf5 = DriverManager.getConnection(zf5Url, dbUser, dbPassword);
+
+            // Query ELS QA for users needing provisioning
+            String fetchUsersQuery = "SELECT COMITID FROM EL_APP_SUPPORT.IAM_ADD_USER WHERE COMITID NOT IN (SELECT COMITID FROM ZF5_USERS)";
+            stmtEls = connEls.prepareStatement(fetchUsersQuery);
+            rs = stmtEls.executeQuery();
+
+            // Process each user
+            while (rs.next()) {
+                String comitId = rs.getString("COMITID");
+
+                // Generate EXEC commands for Center Roles
+                String centerRoleExec = "EXEC PACE_MASTERDBO.ESTAR_UMGR.INS_EGL_CENTER_ROLE_USER('" + comitId + "', '" + accessModelTeam + "', 'AH00000000'); COMMIT;";
+                stmtZf5 = connZf5.prepareStatement(centerRoleExec);
+                stmtZf5.executeUpdate();
+                stmtZf5.close();
+
+                // Generate EXEC commands for PACE Roles
+                String paceRoleExec = "EXEC PACE_MASTERDBO.ESTAR_UMGR.ADD_PACE_ROLE_REL('" + comitId + "', '" + accessModelTeam + "', 'AH00000000'); COMMIT;";
+                stmtZf5 = connZf5.prepareStatement(paceRoleExec);
+                stmtZf5.executeUpdate();
+                stmtZf5.close();
+            }
+
+        } catch (Exception e) {
+            System.out.println("Error executing provisioning commands: " + e.getMessage());
+        } finally {
+            // Close all connections
+            if (rs != null) rs.close();
+            if (stmtEls != null) stmtEls.close();
+            if (stmtZf5 != null) stmtZf5.close();
+            if (connEls != null) connEls.close();
+            if (connZf5 != null) connZf5.close();
+        }
+        ]]>
+    </Script>
+</Rule>
