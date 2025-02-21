@@ -1,0 +1,22 @@
+import sailpoint.object.ProvisioningPlan;
+import sailpoint.object.ProvisioningRequest;
+import sailpoint.object.AttributeRequest;
+
+// Get the current provisioning plan
+ProvisioningPlan plan = provisioningPlan;
+
+if (plan == null) {
+    return "No provisioning plan found!";
+}
+
+// Iterate through account requests
+for (ProvisioningPlan.AccountRequest acctReq : plan.getAccountRequests()) {
+    System.out.println("Application: " + acctReq.getApplication());
+
+    // Iterate through entitlement (attribute) requests
+    for (AttributeRequest attrReq : acctReq.getAttributeRequests()) {
+        if (attrReq.getOperation().toString().equals("Add")) {  // Show only added entitlements
+            System.out.println("Entitlement Requested: " + attrReq.getName() + " = " + attrReq.getValue());
+        }
+    }
+}
