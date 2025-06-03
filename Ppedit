@@ -3,3 +3,11 @@
   IF(AND(G3=FALSE, I3=FALSE, J3=FALSE, K3=FALSE, L3=FALSE, M3=FALSE, N3=FALSE, O3=FALSE),
      IF(E3-TODAY()>=8, "Green", IF(E3-TODAY()>=5, "Yellow", "Red")),
      IF(E3-TODAY()>=5, "Yellow", "Red"))))
+
+
+
+=IF(COUNTA(G3:O3)=0, "",
+ IF(COUNTIF(G3:O3, TRUE)=8, "Green",
+  IF(COUNTIF(G3:O3, TRUE)=0,
+     IF(E3-TODAY()>=8, "Green", IF(E3-TODAY()>=5, "Yellow", "Red")),
+     IF(E3-TODAY()>=5, "Yellow", "Red"))))
